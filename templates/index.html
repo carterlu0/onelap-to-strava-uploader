@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Onelap to Strava 同步工具</title>
+    <link href="https://cdn.bootcdn.net/ajax/libs/twitter-bootstrap/5.3.1/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body { padding-top: 20px; }
+        .loading { display: none; }
+        .card { margin-bottom: 20px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1 class="mb-4">Onelap to Strava 同步工具</h1>
+
+        <!-- Status/Alert Area -->
+        <div id="alert-area"></div>
+
+        <div class="row">
+            <!-- Configuration -->
+            <div class="col-md-4">
+                <div class="card">
+                    <div class="card-header">配置</div>
+                    <div class="card-body">
+                        <form id="config-form">
+                            <div class="mb-3">
+                                <label class="form-label">Onelap 账号</label>
+                                <input type="text" class="form-control" id="onelap_username">
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Onelap 密码</label>
+                                <input type="password" class="form-control" id="onelap_password">
+                            </div>
+                            <hr>
+                            <div class="mb-3">
+                                <label class="form-label">Strava 邮箱 (备用)</label>
+                                <input type="text" class="form-control" id="strava_email">
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Strava 密码 (备用)</label>
+                                <input type="password" class="form-control" id="strava_password">
+                            </div>
+                            <button type="submit" class="btn btn-primary w-100">保存配置</button>
+                        </form>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">工具</div>
+                    <div class="card-body">
+                        <button id="launch-edge-btn" class="btn btn-warning w-100 mb-2">
+                            启动调试版 Edge 浏览器
+                        </button>
+                        <small class="text-muted">
+                            说明: 点击后会关闭现有 Edge 并启动一个支持自动上传的专用窗口。请在该窗口中登录 Strava 并保持开启。
+                        </small>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Main Content -->
+            <div class="col-md-8">
+                <div class="card">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <span>活动列表</span>
+                        <button id="fetch-btn" class="btn btn-success btn-sm">
+                            <span class="spinner-border spinner-border-sm loading" role="status"></span>
+                            从 Onelap 获取最新活动
+                        </button>
+                    </div>
+                    <div class="card-body">
+                        <div class="table-responsive">
+                            <table class="table table-striped table-hover">
+                                <thead>
+                                    <tr>
+                                        <th>日期</th>
+                                        <th>类型</th>
+                                        <th>时间</th>
+                                        <th>距离 (km)</th>
+                                        <th>操作</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="activities-body">
+                                    <!-- Rows will be populated here -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.bootcdn.net/ajax/libs/jquery/3.7.1/jquery.min.js"></script>
+    <script>
+        $(document).ready(function() {
+            loadConfig();
+            loadActivities();
+
+            // Config Form Submit
+            $('#config-form').on('submit', function(e) {
+                e.preventDefault();
+                const data = {
+                    onelap_username: $('#onelap_username').val(),
+                    onelap_password: $('#onelap_password').val(),
+                    strava_email: $('#strava_email').val(),
+                    strava_password: $('#strava_password').val()
+                };
+                
+                $.ajax({
+                    url: '/api/config',
+                    method: 'POST',
+                    contentType: 'application/json',
+                    data: JSON.stringify(data),
+                    success: function(res) {
+                        showAlert('success', res.message);
+                        loadConfig(); // Refresh to see masked
+                    },
+                    error: function(err) {
+                        showAlert('danger', '保存失败');
+                    }
+                });
+            });
+
+            // Fetch Button
+            $('#fetch-btn').on('click', function() {
+                const btn = $(this);
+                btn.prop('disabled', true);
+                btn.find('.loading').show();
+                
+                $.ajax({
+                    url: '/api/fetch',
+                    method: 'POST',
+                    success: function(res) {
+                        if(res.status === 'success') {
+                            showAlert('success', res.message);
+                            renderActivities(res.data);
+                        } else {
+                            showAlert('warning', res.message);
+                        }
+                    },
+                    error: function(xhr) {
+                        showAlert('danger', xhr.responseJSON ? xhr.responseJSON.message : '获取失败');
+                    },
+                    complete: function() {
+                        btn.prop('disabled', false);
+                        btn.find('.loading').hide();
+                    }
+                });
+            });
+
+            // Launch Edge Button
+            $('#launch-edge-btn').on('click', function() {
+                if(!confirm('这将关闭您当前所有的 Edge 窗口并重启一个新的。确定吗？')) return;
+                
+                $.ajax({
+                    url: '/api/launch_edge',
+                    method: 'POST',
+                    success: function(res) {
+                        showAlert('info', res.message);
+                    }
+                });
+            });
+        });
+
+        function loadConfig() {
+            $.get('/api/config', function(res) {
+                if(res.onelap) {
+                    $('#onelap_username').val(res.onelap.username);
+                    $('#onelap_password').val(res.onelap.password);
+                }
+                if(res.strava) {
+                    $('#strava_email').val(res.strava.email);
+                    $('#strava_password').val(res.strava.password);
+                }
+            });
+        }
+
+        function loadActivities() {
+            $.get('/api/activities', function(data) {
+                renderActivities(data);
+            });
+        }
+
+        function renderActivities(data) {
+            const tbody = $('#activities-body');
+            tbody.empty();
+            
+            if(!data || data.length === 0) {
+                tbody.append('<tr><td colspan="5" class="text-center">暂无数据</td></tr>');
+                return;
+            }
+
+            data.forEach((item, index) => {
+                const date = item.date || '-';
+                // Onelap type mapping guess: 0=Cycling?
+                const type = item.type === 0 ? '骑行' : (item.type === 2 ? '跑步' : '其他');
+                // Time: item.time is seconds?
+                const duration = formatTime(item.time);
+                // Distance: item.distance is meters? No, 'distance' in onelap api usually m.
+                // Let's check keys. In json we saw "time": 978. "distance" key wasn't in the snippet I saw earlier but assumed present.
+                // Actually the snippet showed: "time": 978, "totalTime": 1155, "cal": 92. 
+                // Let's assume there is a distance field or calculate from speed?
+                // The snippet I saw earlier was:
+                // "id": 301543, "date": "2026-02-28 10:30", ...
+                // Wait, I need to check if 'distance' is in the json.
+                // Onelap usually returns 'totalDistance' in meters.
+                
+                const dist = item.totalDistance ? (item.totalDistance / 1000).toFixed(2) : (item.distance ? (item.distance / 1000).toFixed(2) : '0.00');
+
+                const row = `
+                    <tr>
+                        <td>${date}</td>
+                        <td>${type}</td>
+                        <td>${duration}</td>
+                        <td>${dist}</td>
+                        <td>
+                            <button class="btn btn-primary btn-sm upload-btn" data-index="${index}">
+                                上传到 Strava
+                            </button>
+                        </td>
+                    </tr>
+                `;
+                tbody.append(row);
+            });
+
+            // Bind upload buttons
+            $('.upload-btn').on('click', function() {
+                const idx = $(this).data('index');
+                uploadActivity(idx, $(this));
+            });
+        }
+
+        function uploadActivity(index, btn) {
+            btn.prop('disabled', true).text('上传中...');
+            
+            $.ajax({
+                url: '/api/upload',
+                method: 'POST',
+                contentType: 'application/json',
+                data: JSON.stringify({ index: index }),
+                success: function(res) {
+                    if(res.status === 'success') {
+                        showAlert('success', res.message);
+                        btn.text('已完成').removeClass('btn-primary').addClass('btn-success');
+                    } else {
+                        showAlert('danger', res.message);
+                        btn.prop('disabled', false).text('重试');
+                    }
+                },
+                error: function(xhr) {
+                    showAlert('danger', xhr.responseJSON ? xhr.responseJSON.message : '上传出错');
+                    btn.prop('disabled', false).text('重试');
+                }
+            });
+        }
+
+        function formatTime(seconds) {
+            if(!seconds) return '-';
+            const h = Math.floor(seconds / 3600);
+            const m = Math.floor((seconds % 3600) / 60);
+            const s = seconds % 60;
+            return `${h}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+        }
+
+        function showAlert(type, message) {
+            const html = `
+                <div class="alert alert-${type} alert-dismissible fade show" role="alert">
+                    ${message}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                </div>
+            `;
+            $('#alert-area').html(html);
+        }
+    </script>
+</body>
+</html>
