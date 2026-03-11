@@ -5,6 +5,12 @@ import requests
 from playwright.sync_api import sync_playwright
 import time
 from datetime import datetime
+try:
+    from launch_edge import kill_edge, launch_edge_debug
+except ImportError:
+    # Fallback if launch_edge.py is not found or has errors
+    def kill_edge(): pass
+    def launch_edge_debug(): pass
 
 def load_config():
     if os.path.exists("config.json"):
@@ -248,16 +254,30 @@ def perform_strava_upload(page, filepath, activity_info=None):
         
         # Wait for "Save & View" button or similar
         try:
-            print("等待 5 秒，让页面加载完成或自动跳转...")
-            time.sleep(5)
-            
-            # Try to click Save just in case it's there and easy
-            save_btn = None
-            for selector in ["button:has-text('Save & View')", "button:has-text('保存并查看')", "[data-testid='save-activity-button']", ".save-button"]:
-                if page.locator(selector).first.is_visible(timeout=2000):
-                    print(f"尝试点击按钮: {selector}")
-                    page.locator(selector).first.click(timeout=2000)
-                    break
+            print("正在等待保存按钮或自动跳转...")
+            # 缩短初始等待，改用轮询检测
+            # Check for success indicators aggressively
+            start_time = time.time()
+            while time.time() - start_time < 15: # 最多等待15秒
+                # 1. Check for Save button
+                for selector in ["button:has-text('Save & View')", "button:has-text('保存并查看')", "[data-testid='save-activity-button']", ".save-button"]:
+                    if page.locator(selector).first.is_visible(timeout=100):
+                        print(f"发现按钮: {selector}，点击保存...")
+                        page.locator(selector).first.click()
+                        time.sleep(1) # Give it a moment to react
+                        break
+                
+                # 2. Check for redirect to activity page (success)
+                if "/activities/" in page.url and "upload" not in page.url:
+                    print("检测到已跳转至活动详情页，上传成功。")
+                    return True
+                    
+                # 3. Check for "duplicate" message (common fast failure/success case)
+                if page.get_by_text("duplicate of").is_visible(timeout=100) or page.get_by_text("重复").is_visible(timeout=100):
+                    print("检测到重复活动提示，视为成功。")
+                    return True
+
+                time.sleep(0.5) # Poll interval
         except:
             pass
 
@@ -282,94 +302,80 @@ def perform_strava_upload(page, filepath, activity_info=None):
         return False
 
 def upload_to_strava(filepath, user=None, password=None, activity_info=None):
-    # 1. Try connecting to existing Edge (localhost:9222)
+    # 1. Try connecting to Edge (localhost:9222)
+    # If fails, kill all Edge and relaunch in debug mode, then connect
     print("尝试连接到已打开的 Edge 浏览器 (调试模式 9222 端口)...")
-    try:
-        with sync_playwright() as p:
+    
+    with sync_playwright() as p:
+        browser = None
+        try:
+            # First attempt: Connect to existing
+            browser = p.chromium.connect_over_cdp("http://localhost:9222", timeout=3000)
+            print("成功连接到现有 Edge 浏览器!")
+        except Exception as e:
+            print(f"连接现有 Edge 失败: {e}")
+            print("正在尝试关闭所有 Edge 窗口并重新启动 (调试模式)...")
+            
             try:
-                # Add timeout to connect, fail fast if not running
-                browser = p.chromium.connect_over_cdp("http://localhost:9222", timeout=5000)
+                kill_edge()
+                launch_edge_debug()
+                print("等待 Edge 启动 (5秒)...")
+                time.sleep(5)
+                browser = p.chromium.connect_over_cdp("http://localhost:9222", timeout=10000)
+                print("成功连接到重启后的 Edge 浏览器!")
+            except Exception as e2:
+                print(f"重启 Edge 并连接失败: {e2}")
+        
+        if browser:
+            try:
                 context = browser.contexts[0]
-                print("成功连接到现有 Edge 浏览器!")
                 
+                # 1. 尝试找到并聚焦同步工具页面 (Web UI)
+                web_ui_page = None
+                for p_page in context.pages:
+                    if "127.0.0.1:5000" in p_page.url or "localhost:5000" in p_page.url:
+                        web_ui_page = p_page
+                        break
+                
+                if web_ui_page:
+                    print("找到同步工具页面，将其置于前台...")
+                    try:
+                        web_ui_page.bring_to_front()
+                    except:
+                        pass # 忽略聚焦失败
+
                 # Find existing Strava tab or create new
                 page = None
                 for p_page in context.pages:
                     if "strava.com" in p_page.url:
                         page = p_page
-                        page.bring_to_front()
-                        print("找到已存在的 Strava 标签页。")
+                        # page.bring_to_front() # 不要主动前置 Strava
+                        print("找到已存在的 Strava 标签页 (后台)。")
                         break
                 
                 if not page:
                     print("未找到 Strava 标签页，创建新标签页...")
                     page = context.new_page()
+                    # 新建标签页会自动前置，如果存在 Web UI，需要重新切回去
+                    if web_ui_page:
+                        try:
+                            web_ui_page.bring_to_front()
+                            print("  (已重新切回同步工具页面)")
+                        except:
+                            pass
                 
                 success = perform_strava_upload(page, filepath, activity_info)
+                browser.close() # Just disconnects for connect_over_cdp
                 if success:
                     print("任务完成。")
-                    # Do not close browser
-                    # Just disconnect
-                    browser.close() # For connect_over_cdp, close() just disconnects, doesn't kill browser
                     return True
                 else:
-                    print("通过现有 Edge 上传失败。")
-                    return False
-                    
+                    print("通过 Edge 自动化上传失败。")
             except Exception as e:
-                print(f"连接现有 Edge 失败: {e}")
-                print("原因可能是: 1. Edge 未启动; 2. 未使用调试端口 9222 启动。")
-                print("正在尝试启动新的实例...")
-                # Fall through to next method
-    except Exception as e:
-        print(f"Playwright 初始化失败: {e}")
-
-    # 2. Try launching persistent context (requires closing Edge)
-    # Modified: Ask user instead of force close
-    print("\n无法连接到调试端口 (9222)。")
-    print("这可能是因为 Edge 未以调试模式启动。")
-    print("建议: 运行 'launch_edge.py' 来启动支持自动化的 Edge 窗口。")
-    
-    # Do not auto-close unless explicitly requested
-    print("尝试启动一次性 Edge 实例 (如果不希望这样，请按 Ctrl+C 终止)...")
-    time.sleep(3) # Give user time to abort
-
-    use_edge_persistent = True
-    
-    if use_edge_persistent:
-        user_data_dir = os.path.expanduser("~\\AppData\\Local\\Microsoft\\Edge\\User Data")
-        try:
-            # We must NOT use 'with sync_playwright() as p:' because exiting the context manager 
-            # might clean up resources. We need to keep it alive if we want browser to stay open?
-            # Actually, playwright context manager just stops the playwright server.
-            # browser.close() is what closes the browser.
-            
-            p = sync_playwright().start()
-            browser = p.chromium.launch_persistent_context(
-                user_data_dir=user_data_dir,
-                channel="msedge",
-                headless=False,
-                args=["--disable-blink-features=AutomationControlled"]
-            )
-            page = browser.pages[0]
-            
-            success = perform_strava_upload(page, filepath, activity_info)
-            
-            print("\n上传完成。")
-            print("注意: 这是一个临时启动的 Edge 实例。")
-            print("按回车键退出脚本并关闭浏览器...")
-            try:
-                input()
-            except:
-                time.sleep(60)
-
-            browser.close()
-            p.stop()
-            return success
-
-        except Exception as e:
-            print(f"启动 Edge 实例失败: {e}")
-            print("请确保已关闭所有 Edge 窗口。")
+                print(f"操作 Edge 浏览器时出错: {e}")
+                if browser:
+                    try: browser.close()
+                    except: pass
 
     # 3. Fallback to original logic (Standard Login)
     print("\n所有 Edge 自动化尝试均失败，尝试使用账号密码登录...")

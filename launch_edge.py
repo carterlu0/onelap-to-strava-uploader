@@ -28,6 +28,32 @@ def find_edge_path():
             
     return None
 
+def kill_edge():
+    print("正在尝试强制关闭 msedge.exe (可能需要管理员权限)...")
+    try:
+        subprocess.run(["taskkill", "/F", "/IM", "msedge.exe"], capture_output=True)
+        time.sleep(1) # 等待释放
+    except Exception as e:
+        print(f"关闭 Edge 失败 (非致命): {e}")
+
+def launch_edge_debug():
+    edge_path = find_edge_path()
+    if not edge_path:
+        raise Exception("未找到 Microsoft Edge 安装路径")
+        
+    user_data_dir = os.path.expanduser(r"~\AppData\Local\Microsoft\Edge\User Data")
+    
+    # 构建命令
+    cmd = [
+        edge_path,
+        "--remote-debugging-port=9222",
+        f"--user-data-dir={user_data_dir}"
+    ]
+    
+    # Popen 不会阻塞，让浏览器独立运行
+    subprocess.Popen(cmd)
+    print("Edge 已启动 (调试模式)")
+
 def main():
     print("=== 启动 Microsoft Edge 调试模式 ===")
     
@@ -39,32 +65,14 @@ def main():
 
     print(f"找到 Edge: {edge_path}")
     
-    user_data_dir = os.path.expanduser(r"~\AppData\Local\Microsoft\Edge\User Data")
-    print(f"用户数据目录: {user_data_dir}")
-    
-    # 构建命令
-    # --remote-debugging-port=9222: 开启调试端口
-    # --restore-last-session: 恢复上次会话（可选）
-    cmd = [
-        edge_path,
-        "--remote-debugging-port=9222",
-        f"--user-data-dir={user_data_dir}"
-    ]
-    
     print("\n正在启动 Edge...")
     print("注意: 如果 Edge 已经运行但没有开启调试端口，本脚本可能无法生效。")
     print("建议: 先手动关闭所有 Edge 窗口，然后再运行此脚本。")
-    print("正在尝试强制关闭 msedge.exe (可能需要管理员权限)...")
     
-    try:
-        subprocess.run(["taskkill", "/F", "/IM", "msedge.exe"], capture_output=True)
-        time.sleep(1) # 等待释放
-    except Exception as e:
-        print(f"关闭 Edge 失败 (非致命): {e}")
+    kill_edge()
 
     try:
-        # Popen 不会阻塞，让浏览器独立运行
-        subprocess.Popen(cmd)
+        launch_edge_debug()
         print("\nEdge 已启动！")
         print("请保留此窗口或 Edge 窗口开启。")
         print("现在您可以运行上传脚本了。")
