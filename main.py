@@ -70,14 +70,22 @@ def main():
                     # Filter activities to reduce file size
                     filtered_activities = []
                     for act in activities:
+                        total_time = act.get("totalTime")
+                        if total_time is None:
+                            total_time = act.get("time")
+
+                        total_dist = act.get("totalDistance")
+                        if total_dist is None:
+                            total_dist = act.get("distance")
+
                         filtered_act = {
                             "id": act.get("id"),
                             "date": act.get("date"),
                             "type": act.get("type"),
                             "time": act.get("time"),
-                            "totalTime": act.get("totalTime"),
+                            "totalTime": total_time,
                             "distance": act.get("distance"),
-                            "totalDistance": act.get("totalDistance"),
+                            "totalDistance": total_dist,
                             "durl": act.get("durl")
                         }
                         filtered_activities.append(filtered_act)
