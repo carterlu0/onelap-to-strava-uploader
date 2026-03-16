@@ -2,6 +2,7 @@ import json
 import sys
 import os
 import requests
+from urllib.parse import urljoin
 from playwright.sync_api import sync_playwright
 import time
 from datetime import datetime
@@ -23,13 +24,30 @@ STRAVA_USER = config.get("strava", {}).get("email", "")
 STRAVA_PASS = config.get("strava", {}).get("password", "")
 
 def download_fit(url, filename):
-    print(f"正在下载 {url} 到 {filename}...")
+    if isinstance(url, str):
+        url = url.strip()
+    base = "https://u.onelap.cn/"
+    full_url = url
+    if isinstance(url, str) and url and not url.lower().startswith(("http://", "https://")):
+        full_url = urljoin(base, url)
+
+    print(f"正在下载 {full_url} 到 {filename}...")
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Referer": "https://www.onelap.cn/"
+        "Referer": base
     }
     try:
-        r = requests.get(url, stream=True, headers=headers)
+        onelap_user = config.get("onelap", {}).get("username")
+        onelap_pass = config.get("onelap", {}).get("password")
+        if onelap_user and onelap_pass:
+            from fetch_onelap import OnelapClient
+            client = OnelapClient(onelap_user, onelap_pass)
+            if client.login():
+                r = client.session.get(full_url, stream=True, headers=headers, timeout=30)
+            else:
+                r = requests.get(full_url, stream=True, headers=headers, timeout=30)
+        else:
+            r = requests.get(full_url, stream=True, headers=headers, timeout=30)
         r.raise_for_status()
         with open(filename, 'wb') as f:
             for chunk in r.iter_content(chunk_size=8192):
