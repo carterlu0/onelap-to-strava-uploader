@@ -1,61 +1,133 @@
-# Onelap to Strava Uploader
+# Magene-link → Strava
 
-这是一个用于将 Onelap (顽鹿) 的骑行/跑步活动自动同步上传到 Strava 的工具。
+> 🚴 骑行结束 → 手机分享 FIT 到 QQ「我的电脑」→ 电脑自动上传 Strava  
+> **到此一游式操作，无需守在电脑前。一行代码都不用写。**
 
-## 功能特点
+---
 
-*   **自动获取**：从 Onelap 获取最新的活动记录。
-*   **自动上传**：自动下载 FIT 文件并上传到 Strava。
-*   **智能验证**：上传后自动跳转到 Strava 活动日志，验证日期和距离是否匹配，确保上传成功。
-*   **Web 界面**：提供直观的网页操作界面，无需敲命令行。
-*   **Edge 浏览器集成**：支持直接调用本机已登录 Strava 的 Edge 浏览器，无需在脚本中输入 Strava 账号密码（避免验证码问题）。
+## 🎯 一句话原理
 
-## 依赖
+```
+顽鹿 APP → 分享 FIT → QQ「我的电脑」→ D:\QQfiles → 自动检测 → Strava ✅
+```
 
-*   Python 3.8+
-*   Microsoft Edge 浏览器 (用于自动化上传)
+---
 
-## 安装
+## 📦 安装（三步，3 分钟）
 
-1.  克隆本项目：
-    ```bash
-    git clone https://github.com/YOUR_USERNAME/onelap-to-strava-uploader.git
-    cd onelap-to-strava-uploader
-    ```
+### ① 下载代码
 
-2.  安装 Python 依赖：
-    ```bash
-    pip install -r requirements.txt
-    playwright install chromium
-    ```
+```bash
+git clone https://github.com/carterlu0/onelap-to-strava-uploader.git
+cd onelap-to-strava-uploader
+pip install -r requirements.txt
+```
 
-## 使用方法
+### ② 获取 Strava API 凭据
 
-### 方式一：Web 界面 (推荐)
+打开 https://www.strava.com/settings/api ，创建一个应用：
 
-1.  双击运行 `start_app.bat` (Windows)。
-2.  浏览器会自动打开 `http://127.0.0.1:5000`。
-3.  **配置**：在网页左侧输入您的 Onelap 账号和密码并保存。
-4.  **启动浏览器**：点击“启动调试版 Edge 浏览器”，这会打开一个专用的 Edge 窗口。**请在此窗口中登录 Strava 并保持开启**。
-5.  **获取活动**：点击“从 Onelap 获取最新活动”。
-6.  **上传**：在列表中点击“上传到 Strava”。
+| 字段 | 填写 |
+|:---|:---|
+| 应用名称 | `Magene-link`（或任意英文） |
+| 网站 URL | `http://localhost:5000` |
+| 授权回调域名 | `localhost` |
 
-### 方式二：命令行
+点创建后，记下页面上显示的 **Client ID**（一串数字）和 **Client Secret**（一长串字符）。
 
-1.  启动 Edge 调试模式（只需运行一次）：
-    ```bash
-    python launch_edge.py
-    ```
-2.  运行主程序：
-    ```bash
-    python main.py
-    ```
-    按提示操作即可。
+### ③ 运行配置向导
 
-## 注意事项
+```bash
+双击 start_app.bat
+```
 
-*   **账号安全**：您的账号密码仅保存在本地的 `config.json` 文件中，不会上传到任何服务器。
-*   **浏览器窗口**：上传过程中脚本会控制 Edge 浏览器，请勿手动关闭正在工作的标签页。
+浏览器打开后按页面提示：
+1. 输入顽鹿账号密码 → 保存
+2. 输入 Client ID / Client Secret → 保存
+3. 点击「连接 Strava」→ 自动跳转授权 → 看到绿色 ✅ 即完成
+
+> 🔐 所有凭据仅保存在本地 `config.json`，不会上传任何服务器。
+
+---
+
+## 🚀 日常使用
+
+### 启动后台（每次开机一次）
+
+```bash
+双击 start_watcher.bat
+```
+
+看到 `🔍 开始监听文件夹: D:\QQfiles` 表示运行中。**最小化窗口即可，不要关闭。**
+
+### 骑行后上传（仅 2 步）
+
+1. 打开顽鹿 APP → 找到刚骑完的活动 → 点击 **分享** → 选择 **QQ「我的电脑」**
+2. 🎉 **30 秒内自动出现在 Strava 上**。`start_watcher.bat` 窗口会打印日志。
+
+---
+
+## 🏠 保持运行
+
+| 需要保持 | 说明 |
+|:---|:---|
+| 💻 电脑开机 | 待机/锁屏/休眠都行 |
+| 🟢 QQ PC 端登录 | 接收手机发来的文件 |
+| ▶️ `start_watcher.bat` | 最小化即可，不要关 |
+
+> 💡 建议把 `start_watcher.bat` 放入 `shell:startup` 文件夹实现开机自启。
+
+---
+
+## 🔧 配置参考
+
+`config.json`（由向导自动填写，一般不需手动改）：
+
+```json
+{
+    "onelap": { "username": "手机号", "password": "密码" },
+    "strava_api": { "client_id": "数字", "client_secret": "密钥" },
+    "fit_watch_dir": "D:\\QQfiles"
+}
+```
+
+| 字段 | 说明 |
+|:---|:---|
+| `fit_watch_dir` | QQ 接收文件的目录。如果 QQ 设置保存在其他位置，改这里。 |
+| `strava_api.*` | Token 由 OAuth 自动管理，不用手动填。 |
+
+---
+
+## ❓ FAQ
+
+**Q: 怎么知道上传成功了？**  
+看 `start_watcher.bat` 窗口，会打印 `✅ 上传成功! Strava 活动 ID: xxxxxxxx`。也可以直接打开 Strava 确认。
+
+**Q: 提示 "Rate Limit Exceeded"？**  
+程序会自动等待恢复，每个文件仅消耗 2 次 API 调用，正常使用不会触发。
+
+**Q: Strava 断了怎么办？**  
+重新运行 `start_app.bat` → 点击「连接 Strava」即可。
+
+**Q: 能上传旧的历史活动吗？**  
+可以。把旧 .fit 文件拖到 `D:\QQfiles`（或你配置的目录），监听器会自动上传。重复的活动 Strava 会自动去重。
+
+**Q: 不用 QQ 可以吗？**  
+只要是能把 .fit 文件传到电脑上指定文件夹的方式都可以。比如微信文件传输助手、AirDrop、甚至 U 盘拷贝。
+
+---
+
+## 📁 项目文件
+
+| 文件 | 角色 |
+|:---|:---|
+| `start_app.bat` | 🧭 **首次使用**：配置向导 |
+| `start_watcher.bat` | 🚀 **日常使用**：后台监听 + 自动上传 |
+| `config.json` | 所有配置集中管理 |
+| `file_watcher.py` | 文件夹监听引擎 |
+| `strava_api.py` | Strava OAuth + 上传 API |
+| `fetch_onelap.py` | Onelap 活动列表（参考用） |
+| `app.py` | 配置向导 Web 后端 |
 
 ## License
 

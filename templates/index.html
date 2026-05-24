@@ -3,278 +3,301 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Onelap to Strava 同步工具</title>
+    <title>Magene-link → Strava 配置向导</title>
     <link href="https://cdn.bootcdn.net/ajax/libs/twitter-bootstrap/5.3.1/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.bootcdn.net/ajax/libs/bootstrap-icons/1.10.5/font/bootstrap-icons.min.css" rel="stylesheet">
     <style>
-        body { padding-top: 20px; }
-        .loading { display: none; }
-        .card { margin-bottom: 20px; }
+        :root { --strava-orange: #FC4C02; }
+        body { background: #f5f7fa; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+        .container { max-width: 700px; }
+
+        .wizard-header {
+            text-align: center; padding: 40px 0 20px;
+        }
+        .wizard-header h1 { font-weight: 700; font-size: 1.8rem; }
+        .wizard-header .subtitle { color: #666; font-size: 1rem; }
+
+        .step-card {
+            background: white; border-radius: 12px;
+            box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+            padding: 24px; margin-bottom: 16px;
+            border-left: 4px solid #dee2e6;
+            transition: border-color 0.3s;
+        }
+        .step-card.active { border-left-color: var(--strava-orange); }
+        .step-card.done { border-left-color: #4caf50; }
+
+        .step-number {
+            display: inline-flex; align-items: center; justify-content: center;
+            width: 32px; height: 32px; border-radius: 50%;
+            background: #dee2e6; color: white; font-weight: 700; font-size: 14px;
+            margin-right: 10px;
+        }
+        .step-card.active .step-number { background: var(--strava-orange); }
+        .step-card.done .step-number { background: #4caf50; }
+
+        .step-title { font-weight: 600; font-size: 1.1rem; display: inline; }
+
+        .btn-strava {
+            background: var(--strava-orange); color: white; border: none;
+            font-weight: 600; border-radius: 8px; padding: 10px 24px;
+        }
+        .btn-strava:hover { background: #e34402; color: white; }
+        .btn-strava:disabled { background: #ccc; }
+
+        .status-badge {
+            display: inline-block; padding: 4px 12px; border-radius: 20px;
+            font-size: 0.8rem; font-weight: 600;
+        }
+        .status-ok { background: #e8f5e9; color: #2e7d32; }
+        .status-pending { background: #fff3e0; color: #e65100; }
+
+        .guide-box {
+            background: #f0f7ff; border: 1px solid #bbdefb;
+            border-radius: 8px; padding: 14px 18px; margin: 12px 0;
+            font-size: 0.9rem;
+        }
+        .guide-box code { background: #e3f2fd; padding: 2px 6px; border-radius: 4px; }
+
+        .done-section {
+            text-align: center; padding: 30px;
+            background: #e8f5e9; border-radius: 12px; margin-top: 20px;
+        }
+        .done-section h3 { color: #2e7d32; }
+        .done-section .big-icon { font-size: 4rem; }
+
+        .loading-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.3); display: flex; align-items: center;
+            justify-content: center; z-index: 9999;
+        }
+        .loading-box {
+            background: white; padding: 30px 40px; border-radius: 16px;
+            text-align: center; box-shadow: 0 8px 32px rgba(0,0,0,0.15);
+        }
     </style>
 </head>
 <body>
-    <div class="container">
-        <h1 class="mb-4">Onelap to Strava 同步工具</h1>
 
-        <!-- Status/Alert Area -->
-        <div id="alert-area"></div>
+<div class="loading-overlay" id="loading-overlay" style="display:none;">
+    <div class="loading-box">
+        <div class="spinner-border text-primary mb-3"></div>
+        <div id="loading-text">处理中...</div>
+    </div>
+</div>
 
-        <div class="row">
-            <!-- Configuration -->
-            <div class="col-md-4">
-                <div class="card">
-                    <div class="card-header">配置</div>
-                    <div class="card-body">
-                        <form id="config-form">
-                            <div class="mb-3">
-                                <label class="form-label">Onelap 账号</label>
-                                <input type="text" class="form-control" id="onelap_username">
-                            </div>
-                            <div class="mb-3">
-                                <label class="form-label">Onelap 密码</label>
-                                <input type="password" class="form-control" id="onelap_password">
-                            </div>
-                            <hr>
-                            <div class="mb-3">
-                                <label class="form-label">Strava 邮箱 (备用)</label>
-                                <input type="text" class="form-control" id="strava_email">
-                            </div>
-                            <div class="mb-3">
-                                <label class="form-label">Strava 密码 (备用)</label>
-                                <input type="password" class="form-control" id="strava_password">
-                            </div>
-                            <button type="submit" class="btn btn-primary w-100">保存配置</button>
-                        </form>
-                    </div>
-                </div>
+<div class="container">
+    <div class="wizard-header">
+        <h1>🧭 Magene-link → Strava</h1>
+        <p class="subtitle">首次配置向导 &nbsp;·&nbsp; 只需做一次，3 分钟完成</p>
+    </div>
 
-                <div class="card">
-                    <div class="card-header">工具</div>
-                    <div class="card-body">
-                        <button id="launch-edge-btn" class="btn btn-warning w-100 mb-2">
-                            启动调试版 Edge 浏览器
-                        </button>
-                        <small class="text-muted">
-                            说明: 点击后会关闭现有 Edge 并启动一个支持自动上传的专用窗口。请在该窗口中登录 Strava 并保持开启。
-                        </small>
-                    </div>
-                </div>
+    <!-- Step 1: Strava API 凭据 -->
+    <div class="step-card active" id="step-1">
+        <span class="step-number">1</span>
+        <span class="step-title">获取 Strava API 凭据</span>
+        <span class="status-badge status-pending float-end" id="badge-1">待完成</span>
+        <div class="guide-box mt-3">
+            <strong>📋 操作步骤：</strong><br>
+            1. 打开 <a href="https://www.strava.com/settings/api" target="_blank">strava.com/settings/api</a><br>
+            2. 填写表单：<br>
+            &nbsp;&nbsp;&nbsp;应用名称：<code>Magene-link</code><br>
+            &nbsp;&nbsp;&nbsp;网站 URL：<code>http://localhost:5000</code><br>
+            &nbsp;&nbsp;&nbsp;授权回调域名：<code>localhost</code><br>
+            3. 点击创建，复制生成的凭据填入下方
+        </div>
+        <div class="row g-2 mt-2">
+            <div class="col-sm-4">
+                <label class="form-label small text-muted">Client ID (数字)</label>
+                <input type="number" class="form-control" id="strava_client_id" placeholder="例: 123456">
             </div>
-
-            <!-- Main Content -->
-            <div class="col-md-8">
-                <div class="card">
-                    <div class="card-header d-flex justify-content-between align-items-center">
-                        <span>活动列表</span>
-                        <button id="fetch-btn" class="btn btn-success btn-sm">
-                            <span class="spinner-border spinner-border-sm loading" role="status"></span>
-                            从 Onelap 获取最新活动
-                        </button>
-                    </div>
-                    <div class="card-body">
-                        <div class="table-responsive">
-                            <table class="table table-striped table-hover">
-                                <thead>
-                                    <tr>
-                                        <th>日期</th>
-                                        <th>类型</th>
-                                        <th>时间</th>
-                                        <th>距离 (km)</th>
-                                        <th>操作</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="activities-body">
-                                    <!-- Rows will be populated here -->
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-                </div>
+            <div class="col-sm-8">
+                <label class="form-label small text-muted">Client Secret</label>
+                <input type="password" class="form-control" id="strava_client_secret" placeholder="例: a1b2c3d4e5f6...">
             </div>
         </div>
     </div>
 
-    <script src="https://cdn.bootcdn.net/ajax/libs/twitter-bootstrap/5.3.1/js/bootstrap.bundle.min.js"></script>
-    <script src="https://cdn.bootcdn.net/ajax/libs/jquery/3.7.1/jquery.min.js"></script>
-    <script>
-        $(document).ready(function() {
-            loadConfig();
-            loadActivities();
+    <!-- Step 2: 连接 Strava -->
+    <div class="step-card" id="step-2">
+        <span class="step-number">2</span>
+        <span class="step-title">连接 Strava 账号</span>
+        <span class="status-badge status-pending float-end" id="badge-2">待授权</span>
+        <p class="text-muted small mt-2 mb-2">点击下方按钮，浏览器会跳转到 Strava 授权页面，登录后自动返回。</p>
+        <button class="btn btn-strava" id="strava-connect-btn" onclick="connectStrava()" disabled>
+            <i class="bi bi-strava"></i> 连接 Strava
+        </button>
+        <span id="strava-user" class="ms-2 small"></span>
+    </div>
 
-            // Config Form Submit
-            $('#config-form').on('submit', function(e) {
-                e.preventDefault();
-                const data = {
-                    onelap_username: $('#onelap_username').val(),
-                    onelap_password: $('#onelap_password').val(),
-                    strava_email: $('#strava_email').val(),
-                    strava_password: $('#strava_password').val()
-                };
-                
-                $.ajax({
-                    url: '/api/config',
-                    method: 'POST',
-                    contentType: 'application/json',
-                    data: JSON.stringify(data),
-                    success: function(res) {
-                        showAlert('success', res.message);
-                        loadConfig(); // Refresh to see masked
-                    },
-                    error: function(err) {
-                        showAlert('danger', '保存失败');
-                    }
-                });
-            });
+    <!-- Step 3: Onelap 账号 -->
+    <div class="step-card" id="step-3">
+        <span class="step-number">3</span>
+        <span class="step-title">填入顽鹿运动账号</span>
+        <span class="status-badge status-pending float-end" id="badge-3">待填写</span>
+        <p class="text-muted small mt-2 mb-2">用于验证身份，仅保存在本地。</p>
+        <div class="row g-2">
+            <div class="col-sm-6">
+                <input type="text" class="form-control" id="onelap_username" placeholder="手机号">
+            </div>
+            <div class="col-sm-6">
+                <input type="password" class="form-control" id="onelap_password" placeholder="密码">
+            </div>
+        </div>
+    </div>
 
-            // Fetch Button
-            $('#fetch-btn').on('click', function() {
-                const btn = $(this);
-                btn.prop('disabled', true);
-                btn.find('.loading').show();
-                
-                $.ajax({
-                    url: '/api/fetch',
-                    method: 'POST',
-                    success: function(res) {
-                        if(res.status === 'success') {
-                            showAlert('success', res.message);
-                            renderActivities(res.data);
-                        } else {
-                            showAlert('warning', res.message);
-                        }
-                    },
-                    error: function(xhr) {
-                        showAlert('danger', xhr.responseJSON ? xhr.responseJSON.message : '获取失败');
-                    },
-                    complete: function() {
-                        btn.prop('disabled', false);
-                        btn.find('.loading').hide();
-                    }
-                });
-            });
+    <!-- Step 4: QQ 文件目录 -->
+    <div class="step-card" id="step-4">
+        <span class="step-number">4</span>
+        <span class="step-title">确认 QQ 文件接收目录</span>
+        <span class="status-badge status-pending float-end" id="badge-4">待确认</span>
+        <p class="text-muted small mt-2 mb-2">
+            手机顽鹿 APP 分享 FIT → QQ「我的电脑」→ PC 端 QQ 接收到此目录。<br>
+            可在 PC 端 QQ 的「设置 → 文件管理」中查看或修改。
+        </p>
+        <input type="text" class="form-control" id="fit_watch_dir"
+               placeholder="D:\QQfiles" value="D:\QQfiles">
+    </div>
 
-            // Launch Edge Button
-            $('#launch-edge-btn').on('click', function() {
-                if(!confirm('这将关闭您当前所有的 Edge 窗口并重启一个新的。确定吗？')) return;
-                
-                $.ajax({
-                    url: '/api/launch_edge',
-                    method: 'POST',
-                    success: function(res) {
-                        showAlert('info', res.message);
-                    }
-                });
-            });
-        });
+    <!-- 保存按钮 -->
+    <div class="text-center mb-4">
+        <button class="btn btn-primary btn-lg px-5" onclick="saveAll()">
+            <i class="bi bi-check-lg"></i> 保存全部配置
+        </button>
+    </div>
 
-        function loadConfig() {
-            $.get('/api/config', function(res) {
-                if(res.onelap) {
-                    $('#onelap_username').val(res.onelap.username);
-                    $('#onelap_password').val(res.onelap.password);
-                }
-                if(res.strava) {
-                    $('#strava_email').val(res.strava.email);
-                    $('#strava_password').val(res.strava.password);
-                }
-            });
+    <!-- 完成提示 (初始隐藏) -->
+    <div class="done-section d-none" id="done-section">
+        <div class="big-icon">🎉</div>
+        <h3>配置完成！</h3>
+        <p class="text-muted">你现在可以关闭本页面和命令行窗口了。</p>
+        <hr>
+        <p><strong>日常使用只需一步：</strong></p>
+        <div class="guide-box text-start">
+            <code style="font-size:1.1rem;">双击 start_watcher.bat</code>
+            <br><small class="text-muted">保持窗口最小化运行即可。</small>
+        </div>
+        <p class="mt-3 small text-muted">
+            骑行结束 → 顽鹿 APP 分享 FIT → QQ「我的电脑」→ 自动上传 ✅
+        </p>
+    </div>
+</div>
+
+<script src="https://cdn.bootcdn.net/ajax/libs/twitter-bootstrap/5.3.1/js/bootstrap.bundle.min.js"></script>
+<script src="https://cdn.bootcdn.net/ajax/libs/jquery/3.7.1/jquery.min.js"></script>
+<script>
+function showLoading(t) { $('#loading-text').text(t || '处理中...'); $('#loading-overlay').show(); }
+function hideLoading() { $('#loading-overlay').hide(); }
+
+function setBadge(step, status, text) {
+    const badge = $(`#badge-${step}`);
+    badge.text(text).removeClass('status-pending status-ok');
+    if (status === 'ok') {
+        badge.addClass('status-ok');
+        $(`#step-${step}`).removeClass('active').addClass('done');
+    } else {
+        badge.addClass('status-pending');
+    }
+}
+
+$(document).ready(function() {
+    // 加载已有配置
+    $.get('/api/config', function(cfg) {
+        if (cfg.onelap) {
+            $('#onelap_username').val(cfg.onelap.username || '');
+            if (cfg.onelap.username) setBadge(3, 'ok', '已填写');
         }
-
-        function loadActivities() {
-            $.get('/api/activities', function(data) {
-                renderActivities(data);
-            });
-        }
-
-        function renderActivities(data) {
-            const tbody = $('#activities-body');
-            tbody.empty();
-            
-            if(!data || data.length === 0) {
-                tbody.append('<tr><td colspan="5" class="text-center">暂无数据</td></tr>');
-                return;
+        if (cfg.strava_api) {
+            $('#strava_client_id').val(cfg.strava_api.client_id || '');
+            if (cfg.strava_api.client_id) {
+                setBadge(1, 'ok', '已填写');
+                $('#strava-connect-btn').prop('disabled', false);
             }
-
-            data.forEach((item, index) => {
-                const date = item.date || '-';
-                // Onelap type mapping guess: 0=Cycling?
-                const type = item.type === 0 ? '骑行' : (item.type === 2 ? '跑步' : '其他');
-                // Time: item.time is seconds?
-                const duration = formatTime(item.time);
-                // Distance: item.distance is meters? No, 'distance' in onelap api usually m.
-                // Let's check keys. In json we saw "time": 978. "distance" key wasn't in the snippet I saw earlier but assumed present.
-                // Actually the snippet showed: "time": 978, "totalTime": 1155, "cal": 92. 
-                // Let's assume there is a distance field or calculate from speed?
-                // The snippet I saw earlier was:
-                // "id": 301543, "date": "2026-02-28 10:30", ...
-                // Wait, I need to check if 'distance' is in the json.
-                // Onelap usually returns 'totalDistance' in meters.
-                
-                const dist = item.totalDistance ? (item.totalDistance / 1000).toFixed(2) : (item.distance ? (item.distance / 1000).toFixed(2) : '0.00');
-
-                const row = `
-                    <tr>
-                        <td>${date}</td>
-                        <td>${type}</td>
-                        <td>${duration}</td>
-                        <td>${dist}</td>
-                        <td>
-                            <button class="btn btn-primary btn-sm upload-btn" data-index="${index}">
-                                上传到 Strava
-                            </button>
-                        </td>
-                    </tr>
-                `;
-                tbody.append(row);
-            });
-
-            // Bind upload buttons
-            $('.upload-btn').on('click', function() {
-                const idx = $(this).data('index');
-                uploadActivity(idx, $(this));
-            });
         }
-
-        function uploadActivity(index, btn) {
-            btn.prop('disabled', true).text('上传中...');
-            
-            $.ajax({
-                url: '/api/upload',
-                method: 'POST',
-                contentType: 'application/json',
-                data: JSON.stringify({ index: index }),
-                success: function(res) {
-                    if(res.status === 'success') {
-                        showAlert('success', res.message);
-                        btn.text('已完成').removeClass('btn-primary').addClass('btn-success');
-                    } else {
-                        showAlert('danger', res.message);
-                        btn.prop('disabled', false).text('重试');
-                    }
-                },
-                error: function(xhr) {
-                    showAlert('danger', xhr.responseJSON ? xhr.responseJSON.message : '上传出错');
-                    btn.prop('disabled', false).text('重试');
-                }
-            });
+        if (cfg.fit_watch_dir) {
+            $('#fit_watch_dir').val(cfg.fit_watch_dir);
+            setBadge(4, 'ok', '已设置');
         }
+    });
 
-        function formatTime(seconds) {
-            if(!seconds) return '-';
-            const h = Math.floor(seconds / 3600);
-            const m = Math.floor((seconds % 3600) / 60);
-            const s = seconds % 60;
-            return `${h}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+    // 检查 Strava 授权
+    $.get('/api/strava/status', function(res) {
+        if (res.ready) {
+            setBadge(2, 'ok', '已连接');
+            $('#strava-connect-btn').text('已连接').removeClass('btn-strava').addClass('btn-success').prop('disabled', true);
+            if (res.athlete) {
+                $('#strava-user').text(`✅ ${res.athlete.name}`);
+            }
+        } else if (res.reason === 'no_credentials') {
+            $('#strava-connect-btn').prop('disabled', true);
+        } else {
+            $('#strava-connect-btn').prop('disabled', false);
         }
+    });
+});
 
-        function showAlert(type, message) {
-            const html = `
-                <div class="alert alert-${type} alert-dismissible fade show" role="alert">
-                    ${message}
-                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-                </div>
-            `;
-            $('#alert-area').html(html);
+// 输入框变化时自动激活对应按钮
+$('#strava_client_id').on('input', function() {
+    if ($(this).val()) {
+        setBadge(1, 'ok', '已填写');
+        $('#strava-connect-btn').prop('disabled', false);
+    }
+});
+$('#onelap_username').on('input', function() {
+    if ($(this).val()) setBadge(3, 'ok', '已填写');
+});
+$('#fit_watch_dir').on('input', function() {
+    if ($(this).val()) setBadge(4, 'ok', '已设置');
+});
+
+function connectStrava() {
+    showLoading('正在启动 Strava 授权……<br><small>浏览器将跳转到 Strava 页面</small>');
+    $.ajax({
+        url: '/api/strava/authorize', method: 'POST', timeout: 130000,
+        success: function(r) {
+            hideLoading();
+            setBadge(2, 'ok', '已连接');
+            $('#strava-connect-btn').text('已连接').removeClass('btn-strava').addClass('btn-success').prop('disabled', true);
+            if (r.message) $('#strava-user').text('✅ ' + r.message);
+        },
+        error: function(x) {
+            hideLoading();
+            alert('授权失败: ' + (x.responseJSON?.message || '请重试'));
         }
-    </script>
+    });
+}
+
+function saveAll() {
+    const data = {
+        onelap_username: $('#onelap_username').val().trim(),
+        onelap_password: $('#onelap_password').val(),
+        strava_client_id: $('#strava_client_id').val().trim(),
+        strava_client_secret: $('#strava_client_secret').val(),
+        fit_watch_dir: $('#fit_watch_dir').val().trim(),
+    };
+
+    if (!data.strava_client_id) { alert('请先填入 Strava Client ID'); return; }
+    if (!data.fit_watch_dir) { alert('请确认 QQ 文件目录'); return; }
+
+    showLoading('保存配置...');
+    $.ajax({
+        url: '/api/config', method: 'POST', contentType: 'application/json',
+        data: JSON.stringify(data),
+        success: function() {
+            hideLoading();
+            setBadge(1, 'ok', '已保存');
+            setBadge(3, 'ok', '已保存');
+            setBadge(4, 'ok', '已保存');
+            // 显示完成面板
+            $('#done-section').removeClass('d-none');
+            $('html, body').animate({ scrollTop: $('#done-section').offset().top - 40 }, 500);
+        },
+        error: function(x) {
+            hideLoading();
+            alert('保存失败: ' + (x.responseJSON?.message || ''));
+        }
+    });
+}
+</script>
 </body>
 </html>

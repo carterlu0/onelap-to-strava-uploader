@@ -1,0 +1,14 @@
+{
+    "onelap": {
+        "username": "你的Onelap手机号",
+        "password": "你的Onelap密码"
+    },
+    "strava_api": {
+        "client_id": "你的数字ClientID",
+        "client_secret": "你的ClientSecret",
+        "access_token": "",
+        "refresh_token": "",
+        "expires_at": 0
+    },
+    "fit_watch_dir": "D:\\QQfiles"
+}

@@ -1,7 +1,26 @@
+# 敏感文件 (包含个人凭据和活动数据)
 config.json
 activities.json
-.venv/
-__pycache__/
+uploaded_files.json
+
+# FIT 文件和缓存
+fit_files/
 *.fit
+*.gpx
+*.tcx
 *.log
 *.png
+
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+
+# IDE
+.vscode/
+.idea/
+.continue/
+
+# OS
+.DS_Store
+Thumbs.db
