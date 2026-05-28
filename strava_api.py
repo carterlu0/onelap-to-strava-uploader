@@ -89,7 +89,7 @@ class StravaClient:
     # ---------- OAuth 2.0 授权流程 ----------
 
     def get_authorization_url(self, redirect_uri="http://localhost:5001/callback",
-                               scope="read,activity:write"):
+                               scope="read,activity:read_all,activity:write"):
         """生成 Strava 授权页面 URL"""
         params = {
             "client_id": self.client_id,

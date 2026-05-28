@@ -159,6 +159,23 @@
                placeholder="D:\QQfiles" value="D:\QQfiles">
     </div>
 
+    <!-- Step 5: 扫描 Magene 码表 -->
+    <div class="step-card" id="step-5">
+        <span class="step-number">5</span>
+        <span class="step-title">扫描 Magene 码表（可选）</span>
+        <span class="status-badge status-pending float-end" id="badge-5">可选</span>
+        <p class="text-muted small mt-2 mb-2">
+            将 Magene 码表通过 USB 连接电脑并开机，点击扫描即可自动发现 FIT 文件。
+        </p>
+        <div class="d-flex gap-2 align-items-center">
+            <button class="btn btn-outline-primary btn-sm" onclick="scanDevice()">
+                <i class="bi bi-usb-plug"></i> 扫描设备
+            </button>
+            <span id="device-status" class="small"></span>
+        </div>
+        <div id="device-files" class="mt-2 small" style="max-height:120px;overflow-y:auto;"></div>
+    </div>
+
     <!-- 保存按钮 -->
     <div class="text-center mb-4">
         <button class="btn btn-primary btn-lg px-5" onclick="saveAll()">
@@ -295,6 +312,54 @@ function saveAll() {
         error: function(x) {
             hideLoading();
             alert('保存失败: ' + (x.responseJSON?.message || ''));
+        }
+    });
+}
+
+// ---- Magene 设备扫描 ----
+function scanDevice() {
+    showLoading('正在搜索 Magene 设备...');
+    $.ajax({
+        url: '/api/device/scan', method: 'POST', timeout: 15000,
+        success: function(r) {
+            hideLoading();
+            if (!r.found) {
+                $('#device-status').html('⚠️ 未检测到设备。请确保码表已通过 USB 连接并开机。');
+                setBadge(5, 'pending', '未发现');
+                return;
+            }
+            setBadge(5, 'ok', '已发现');
+            $('#device-status').html(`✅ 发现 ${r.count} 个 FIT 文件 (${r.device_path})`);
+            let html = '';
+            for (let f of r.files.slice(0, 10)) {
+                html += `<div>📄 ${f.name} (${(f.size/1024).toFixed(1)}KB)</div>`;
+            }
+            if (r.files.length > 10) html += `<div>... 还有 ${r.files.length-10} 个文件</div>`;
+            if (r.files.length > 0) {
+                html += `<button class="btn btn-sm btn-success mt-1" onclick="copyDeviceFiles()">
+                    <i class="bi bi-download"></i> 复制文件并上传到 Strava
+                </button>`;
+            }
+            $('#device-files').html(html);
+        },
+        error: function() {
+            hideLoading();
+            $('#device-status').text('扫描失败');
+        }
+    });
+}
+
+function copyDeviceFiles() {
+    showLoading('正在复制文件...');
+    $.ajax({
+        url: '/api/device/copy', method: 'POST', timeout: 60000,
+        success: function(r) {
+            hideLoading();
+            alert(`已复制 ${r.count} 个文件到 fit_files/ 目录。\n\n可以用 main.py 上传到 Strava，\n或直接运行 start_watcher.bat 自动上传。`);
+        },
+        error: function(x) {
+            hideLoading();
+            alert('复制失败: ' + (x.responseJSON?.message || ''));
         }
     });
 }

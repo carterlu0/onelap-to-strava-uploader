@@ -22,6 +22,7 @@ from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from strava_api import StravaClient, get_strava_client
+from to_tcx import fit_to_tcx  # FIT → TCX 转换（含 GCJ-02 修正 + 功率/心率）
 
 logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(message)s",
@@ -62,46 +63,43 @@ class FileWatcher:
             client_secret=config.get("client_secret"),
         )
 
-        # 支持的扩展名 — 只扫描 .fit 文件
+        # GCJ-02 修正开关（默认开启）
+        full_config = load_config()
+        self.fix_gcj02 = full_config.get("fit_fix_gcj02", True)
+
+        # 只扫描 .fit 文件 (Magene 码表导出格式)
         self.extensions = {".fit"}
 
     # ---------- 已上传记录 ----------
 
-    def _load_uploaded(self) -> set[str]:
-        """加载已上传文件记录 (用文件哈希去重)"""
+    def _load_uploaded(self) -> dict[str, str]:
+        """
+        加载已上传记录: { external_id -> md5_hash }
+        明文格式，可手动编辑删除某条记录以实现重传
+        """
         if os.path.exists(UPLOADED_LOG):
             try:
                 with open(UPLOADED_LOG, "r", encoding="utf-8") as f:
-                    return set(json.load(f))
+                    data = json.load(f)
+                    if isinstance(data, dict):
+                        return data
+                    # 兼容旧格式 (list → dict)
+                    if isinstance(data, list):
+                        legacy = {}
+                        for i, h in enumerate(data):
+                            legacy[f"legacy_{i}"] = h
+                        return legacy
             except Exception:
                 pass
-        return set()
+        return {}
 
     def _save_uploaded(self):
-        # 只保留最近 500 条记录，防止文件无限增长
-        items = sorted(self.uploaded)
-        if len(items) > 500:
-            items = items[-500:]
-            self.uploaded = set(items)
+        """保存已上传记录，限制 500 条。仅用文件名作为 key，值存 'ok'。"""
+        if len(self.uploaded) > 500:
+            keys = list(self.uploaded.keys())[-500:]
+            self.uploaded = {k: self.uploaded[k] for k in keys}
         with open(UPLOADED_LOG, "w", encoding="utf-8") as f:
-            json.dump(items, f, ensure_ascii=False)
-
-    def _file_hash(self, filepath: str) -> str:
-        """用文件名+大小+前64KB内容生成可靠哈希，防止同名不同内容文件误判"""
-        name = os.path.basename(filepath)
-        try:
-            size = os.path.getsize(filepath)
-        except OSError:
-            return ""
-        hasher = hashlib.md5()
-        hasher.update(name.encode())
-        hasher.update(str(size).encode())
-        try:
-            with open(filepath, "rb") as f:
-                hasher.update(f.read(65536))
-        except Exception:
-            pass
-        return hasher.hexdigest()
+            json.dump(self.uploaded, f, indent=2, ensure_ascii=False)
 
     # ---------- 文件稳定性检测 ----------
 
@@ -176,11 +174,15 @@ class FileWatcher:
     # ---------- 上传 ----------
 
     def _upload_file(self, filepath: str) -> bool:
-        """上传单个文件到 Strava"""
+        """上传 .fit 文件到 Strava。先转 TCX 修正 GCJ-02 + 保留功率/心率。"""
         filename = os.path.basename(filepath)
-        fh = self._file_hash(filepath)
-        if fh in self.uploaded:
-            logger.info(f"已上传过，跳过: {filename}")
+        ext = os.path.splitext(filename)[1].lower()
+        ext_id = os.path.splitext(filename)[0]
+
+        # 本地记录检查
+        if ext_id in self.uploaded:
+            logger.info(f"本地记录已存在，跳过: {filename}")
+            logger.info(f"  💡 如需重传，请从 uploaded_files.json 中删除 '{ext_id}' 条目")
             return True
 
         # 等待文件写入完成
@@ -189,36 +191,39 @@ class FileWatcher:
             logger.error(f"文件未稳定: {filepath}")
             return False
 
-        file_size = os.path.getsize(filepath)
-        logger.info(f"开始上传: {filename} ({file_size / 1024:.1f} KB)")
+        # 如果是 .fit 文件且开启 GCJ-02 修正 → 转为 TCX 上传
+        upload_path = filepath
+        temp_tcx = None
+        if ext == '.fit' and self.fix_gcj02:
+            import tempfile as tf
+            temp_tcx = os.path.join(tf.gettempdir(), f"_tcx_{ext_id}.tcx")
+            tcx = fit_to_tcx(filepath, fix_gcj02=True)
+            if tcx:
+                with open(temp_tcx, 'w', encoding='utf-8') as f:
+                    f.write(tcx)
+                upload_path = temp_tcx
+                logger.info(f"  📍 FIT → TCX: GCJ-02 已修正 + 功率/心率已保留")
+            else:
+                logger.info(f"  ⚠️ TCX 转换失败，尝试直接上传 FIT")
 
-        # 使用文件名的 stem 作为 external_id，帮助 Strava 去重
-        ext_id = os.path.splitext(filename)[0]
+        file_size = os.path.getsize(upload_path)
+        logger.info(f"开始上传: {os.path.basename(upload_path)} ({file_size / 1024:.1f} KB)")
 
         try:
-            result = self.strava.upload_activity(filepath, external_id=ext_id)
+            result = self.strava.upload_activity(upload_path, external_id=ext_id)
 
             if result.get("status") == "success":
                 activity_id = result.get("activity_id")
-                self.uploaded.add(fh)
+                self.uploaded[ext_id] = result.get("upload_id", "ok")  # 只记录已上传
                 self._save_uploaded()
                 logger.info(f"✅ 上传成功! Strava 活动 ID: {activity_id}")
                 logger.info(f"   https://www.strava.com/activities/{activity_id}")
                 return True
 
-            elif result.get("status") == "duplicate":
-                existing_id = result.get("activity_id", "")
-                self.uploaded.add(fh)
+            elif result.get("status") in ("duplicate", "processing"):
+                self.uploaded[ext_id] = "ok"
                 self._save_uploaded()
-                logger.info(f"⏭️ 已在 Strava 存在，跳过: {filename}"
-                           + (f" (activity/{existing_id})" if existing_id else ""))
-                return True
-
-            elif result.get("status") == "processing":
-                # 文件已提交 Strava，后台会完成处理
-                self.uploaded.add(fh)
-                self._save_uploaded()
-                logger.info(f"✅ 已提交 (upload/{result.get('upload_id')})，Strava 后台处理中")
+                logger.info(f"✅ 已提交/已存在，记录完成: {filename}")
                 return True
 
             else:
@@ -228,6 +233,13 @@ class FileWatcher:
         except Exception as e:
             logger.error(f"❌ 上传异常: {e}")
             return False
+        finally:
+            # 清理临时 TCX 文件
+            if temp_tcx and os.path.exists(temp_tcx):
+                try:
+                    os.remove(temp_tcx)
+                except OSError:
+                    pass
 
     # ---------- 主循环 ----------
 
